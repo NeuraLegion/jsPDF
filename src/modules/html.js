@@ -506,6 +506,9 @@ import { globalObject } from "../libs/globalObject.js";
 
         this.prop.canvas = canvas;
         document.body.removeChild(this.prop.overlay);
+
+        // custom: calculate and return last y position
+        return this.opt.jsPDF.context2d.posY + this.prop.container.offsetHeight;
       });
   };
 
@@ -538,9 +541,10 @@ import { globalObject } from "../libs/globalObject.js";
     ];
 
     // Fulfill prereqs then create the image.
-    return this.thenList(prereqs).then(function toPdf_main() {
+    return this.thenList(prereqs).then(function toPdf_main(y) {
       // Create local copies of frequently used properties.
       this.prop.pdf = this.prop.pdf || this.opt.jsPDF;
+      return y;
     });
   };
 
@@ -626,8 +630,9 @@ import { globalObject } from "../libs/globalObject.js";
     ];
 
     // Fulfill prereqs, update the filename (if provided), and save the PDF.
-    return this.thenList(prereqs).then(function doCallback_main() {
+    return this.thenList(prereqs).then(function doCallback_main(y) {
       this.prop.callback(this.prop.pdf);
+      return y;
     });
   };
 
