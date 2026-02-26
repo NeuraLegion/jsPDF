@@ -1349,6 +1349,10 @@ import {
       return;
     }
 
+    // custom: storing origX/origY for further link by bound detection (custom html2canvas linkCallback)
+    var origX = x;
+    var origY = y;
+
     var degs = rad2deg(this.ctx.transform.rotation);
 
     // We only use X axis as scale hint
@@ -1361,7 +1365,9 @@ import {
       scale: scale,
       angle: degs,
       align: this.textAlign,
-      maxWidth: maxWidth
+      maxWidth: maxWidth,
+      origX: origX,
+      origY: origY
     });
   };
 
@@ -1845,6 +1851,16 @@ import {
     var lineWidth = this.lineWidth;
     var lineJoin = this.lineJoin;
     this.pdf.addPage();
+
+    // custom: didDrawPage callback
+    if (this.didDrawPage) {
+      var oldSize = this.pdf.internal.getFontSize();
+      var oldColor = this.pdf.internal.getTextColor();
+      this.didDrawPage();
+      this.pdf.setFontSize(oldSize);
+      this.pdf.setTextColor(oldColor);
+    }
+
     this.fillStyle = fillStyle;
     this.strokeStyle = strokeStyle;
     this.font = font;
@@ -2430,6 +2446,30 @@ import {
                 renderingMode: options.renderingMode
               }
             );
+
+            // custom: adding links (linkMeta comes from custom html2canvas linkCallback)
+            if (this.linkMeta) {
+              var x1 = this.linkMeta.bounds.left;
+              var x2 = x1 + this.linkMeta.bounds.width;
+              var y1 = this.linkMeta.bounds.top;
+              var y2 = y1 + this.linkMeta.bounds.height;
+
+              if (
+                options.origX >= x1 &&
+                options.origX <= x2 &&
+                options.origY >= y1 &&
+                options.origY <= y2
+              ) {
+                const { x, y, h, w } = baseLineRectOnPage;
+                this.pdf.link(x, y - h, w, h, {
+                  url: this.linkMeta.href
+                });
+
+                if (this.didAddLink) {
+                  this.didAddLink(i, x, y - h, w, h, this.linkMeta.href);
+                }
+              }
+            }
 
             if (needsClipping) {
               this.pdf.restoreGraphicsState();
