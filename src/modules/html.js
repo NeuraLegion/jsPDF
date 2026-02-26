@@ -484,6 +484,13 @@ import { globalObject } from "../libs/globalObject.js";
           }
         }
 
+        // custom: new callbacks
+        pdf.context2d.didDrawPage = this.opt.didDrawPage;
+        pdf.context2d.didAddLink = this.opt.didAddLink;
+        options.linkCallback = (href, bounds) => {
+          pdf.context2d.linkMeta = { href, bounds };
+        };
+
         options.windowHeight = options.windowHeight || 0;
         options.windowHeight =
           options.windowHeight == 0
