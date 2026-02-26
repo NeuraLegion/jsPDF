@@ -746,6 +746,9 @@ import {
         this.ctx.ignoreClearRect = Boolean(value);
       }
     });
+
+    // custom: map (pageIdx => number) of saved graphic contexts (q) to avoid unpaired restore (Q) on auto-paging
+    this.savedCtxPageMap = new Map();
   };
 
   /**
@@ -1182,6 +1185,8 @@ import {
     for (var i = 0; i < this.pdf.internal.getNumberOfPages(); i++) {
       this.pdf.setPage(i + 1);
       this.pdf.internal.out("q");
+
+      this.savedCtxPageMap.set(i, (this.savedCtxPageMap.get(i) || 0) + 1);
     }
     this.pdf.setPage(tmpPageNumber);
 
@@ -1203,6 +1208,12 @@ import {
     doStackPop = typeof doStackPop === "boolean" ? doStackPop : true;
     var tmpPageNumber = this.pdf.internal.getCurrentPageInfo().pageNumber;
     for (var i = 0; i < this.pdf.internal.getNumberOfPages(); i++) {
+      if (this.savedCtxPageMap.get(i) > 0) {
+        this.savedCtxPageMap.set(i, this.savedCtxPageMap.get(i) - 1);
+      } else {
+        continue;
+      }
+
       this.pdf.setPage(i + 1);
       this.pdf.internal.out("Q");
     }
