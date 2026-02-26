@@ -88,6 +88,22 @@ import {
     }
   ]);
 
+  // custom: resetContext2D event
+  jsPDFAPI.events.push([
+    "resetContext2D",
+    function() {
+      this.context2d.ctx = new ContextLayer();
+      this.context2d.ctxStack = [];
+      this.context2d.pageWrapXEnabled = false;
+      this.context2d.pageWrapYEnabled = false;
+      this.context2d.posX = 0;
+      this.context2d.posY = 0;
+      this.context2d.autoPaging = false;
+      this.context2d.lastBreak = 0;
+      this.context2d.pageBreaks = [];
+    }
+  ]);
+
   var Context2D = function(pdf) {
     Object.defineProperty(this, "canvas", {
       get: function() {
