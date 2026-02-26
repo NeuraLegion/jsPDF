@@ -1220,6 +1220,9 @@ import {
     this.pdf.setPage(tmpPageNumber);
 
     if (doStackPop && this.ctxStack.length !== 0) {
+      // custom: save/restore prevPageLastElemOffset (related to autoPaging: 'text')
+      const prevPageLastElemOffset = this.ctx.prevPageLastElemOffset;
+
       this.ctx = this.ctxStack.pop();
       this.fillStyle = this.ctx.fillStyle;
       this.strokeStyle = this.ctx.strokeStyle;
@@ -1229,6 +1232,9 @@ import {
       this.lineJoin = this.ctx.lineJoin;
       this.lineDash = this.ctx.lineDash;
       this.lineDashOffset = this.ctx.lineDashOffset;
+
+      // custom: save/restore prevPageLastElemOffset  (related to autoPaging: 'text')
+      this.ctx.prevPageLastElemOffset = prevPageLastElemOffset;
     }
   };
 
