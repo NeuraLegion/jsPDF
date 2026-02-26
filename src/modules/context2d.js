@@ -2416,10 +2416,12 @@ import {
           doSlice ||
           textBoundsOnPage.y + textBoundsOnPage.h <= pageHeightMinusBottomMargin
         ) {
+          // custom: number precision workaround
+          var EPSILON = 0.0001;
           if (
             doSlice ||
-            (textBoundsOnPage.y >= topMargin &&
-              textBoundsOnPage.x <= pageWidthMinusRightMargin)
+            (textBoundsOnPage.y + EPSILON >= topMargin &&
+              textBoundsOnPage.x - EPSILON <= pageWidthMinusRightMargin)
           ) {
             var croppedText = doSlice
               ? options.text
