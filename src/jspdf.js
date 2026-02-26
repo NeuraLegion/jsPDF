@@ -1794,6 +1794,12 @@ function jsPDF(options) {
         ? alreadyAppliedFilters.join(" ")
         : alreadyAppliedFilters.toString());
 
+    // custom: filter out redundant context save/restore pairs from output
+    var redundantCtxRegEx = /\nq\nQ(?=\n)/g;
+    while (redundantCtxRegEx.test(processedData.data)) {
+      processedData.data = processedData.data.replace(redundantCtxRegEx, "");
+    }
+
     if (processedData.data.length !== 0) {
       keyValues.push({
         key: "Length",
