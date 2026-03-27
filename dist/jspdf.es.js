@@ -1,7 +1,7 @@
 /** @license
  *
  * jsPDF - PDF Document creation from JavaScript
- * Version 4.2.1 Built on 2026-03-17T11:11:27.057Z
+ * Version 4.2.1 Built on 2026-03-27T16:49:15.610Z
  *                      CommitID 00000000
  *
  * Copyright (c) 2010-2025 James Hall <james@parall.ax>, https://github.com/MrRio/jsPDF
@@ -2365,6 +2365,12 @@ function jsPDF(options) {
       };
     }
     var filterAsString = processedData.reverseChain + (Array.isArray(alreadyAppliedFilters) ? alreadyAppliedFilters.join(" ") : alreadyAppliedFilters.toString());
+
+    // custom: filter out redundant context save/restore pairs from output
+    var redundantCtxRegEx = /\nq\nQ(?=\n)/g;
+    while (redundantCtxRegEx.test(processedData.data)) {
+      processedData.data = processedData.data.replace(redundantCtxRegEx, "");
+    }
     if (processedData.data.length !== 0) {
       keyValues.push({
         key: "Length",
@@ -11154,6 +11160,19 @@ function parseFontFamily(input) {
     Matrix = this.internal.Matrix;
     _ctx = new ContextLayer();
   }]);
+
+  // custom: resetContext2D event
+  jsPDFAPI.events.push(["resetContext2D", function () {
+    this.context2d.ctx = new ContextLayer();
+    this.context2d.ctxStack = [];
+    this.context2d.pageWrapXEnabled = false;
+    this.context2d.pageWrapYEnabled = false;
+    this.context2d.posX = 0;
+    this.context2d.posY = 0;
+    this.context2d.autoPaging = false;
+    this.context2d.lastBreak = 0;
+    this.context2d.pageBreaks = [];
+  }]);
   var Context2D = function Context2D(pdf) {
     Object.defineProperty(this, "canvas", {
       get: function get() {
@@ -11747,6 +11766,9 @@ function parseFontFamily(input) {
         this.ctx.ignoreClearRect = Boolean(value);
       }
     });
+
+    // custom: map (pageIdx => number) of saved graphic contexts (q) to avoid unpaired restore (Q) on auto-paging
+    this.savedCtxPageMap = new Map();
   };
 
   /**
@@ -12131,6 +12153,7 @@ function parseFontFamily(input) {
     for (var i = 0; i < this.pdf.internal.getNumberOfPages(); i++) {
       this.pdf.setPage(i + 1);
       this.pdf.internal.out("q");
+      this.savedCtxPageMap.set(i, (this.savedCtxPageMap.get(i) || 0) + 1);
     }
     this.pdf.setPage(tmpPageNumber);
     if (doStackPush) {
@@ -12151,11 +12174,18 @@ function parseFontFamily(input) {
     doStackPop = typeof doStackPop === "boolean" ? doStackPop : true;
     var tmpPageNumber = this.pdf.internal.getCurrentPageInfo().pageNumber;
     for (var i = 0; i < this.pdf.internal.getNumberOfPages(); i++) {
+      if (this.savedCtxPageMap.get(i) > 0) {
+        this.savedCtxPageMap.set(i, this.savedCtxPageMap.get(i) - 1);
+      } else {
+        continue;
+      }
       this.pdf.setPage(i + 1);
       this.pdf.internal.out("Q");
     }
     this.pdf.setPage(tmpPageNumber);
     if (doStackPop && this.ctxStack.length !== 0) {
+      // custom: save/restore prevPageLastElemOffset (related to autoPaging: 'text')
+      var prevPageLastElemOffset = this.ctx.prevPageLastElemOffset;
       this.ctx = this.ctxStack.pop();
       this.fillStyle = this.ctx.fillStyle;
       this.strokeStyle = this.ctx.strokeStyle;
@@ -12165,6 +12195,9 @@ function parseFontFamily(input) {
       this.lineJoin = this.ctx.lineJoin;
       this.lineDash = this.ctx.lineDash;
       this.lineDashOffset = this.ctx.lineDashOffset;
+
+      // custom: save/restore prevPageLastElemOffset  (related to autoPaging: 'text')
+      this.ctx.prevPageLastElemOffset = prevPageLastElemOffset;
     }
   };
 
@@ -12301,6 +12334,10 @@ function parseFontFamily(input) {
     if (isFillTransparent.call(this)) {
       return;
     }
+
+    // custom: storing origX/origY for further link by bound detection (custom html2canvas linkCallback)
+    var origX = x;
+    var origY = y;
     var degs = rad2deg(this.ctx.transform.rotation);
 
     // We only use X axis as scale hint
@@ -12312,7 +12349,9 @@ function parseFontFamily(input) {
       scale: scale,
       angle: degs,
       align: this.textAlign,
-      maxWidth: maxWidth
+      maxWidth: maxWidth,
+      origX: origX,
+      origY: origY
     });
   };
 
@@ -12623,6 +12662,15 @@ function parseFontFamily(input) {
     var lineWidth = this.lineWidth;
     var lineJoin = this.lineJoin;
     this.pdf.addPage();
+
+    // custom: didDrawPage callback
+    if (this.didDrawPage) {
+      var oldSize = this.pdf.internal.getFontSize();
+      var oldColor = this.pdf.internal.getTextColor();
+      this.didDrawPage();
+      this.pdf.setFontSize(oldSize);
+      this.pdf.setTextColor(oldColor);
+    }
     this.fillStyle = fillStyle;
     this.strokeStyle = strokeStyle;
     this.font = font;
@@ -13009,7 +13057,9 @@ function parseFontFamily(input) {
         }
         var doSlice = this.autoPaging !== "text";
         if (doSlice || textBoundsOnPage.y + textBoundsOnPage.h <= pageHeightMinusBottomMargin) {
-          if (doSlice || textBoundsOnPage.y >= topMargin && textBoundsOnPage.x <= pageWidthMinusRightMargin) {
+          // custom: number precision workaround
+          var EPSILON = 0.0001;
+          if (doSlice || textBoundsOnPage.y + EPSILON >= topMargin && textBoundsOnPage.x - EPSILON <= pageWidthMinusRightMargin) {
             var croppedText = doSlice ? options.text : this.pdf.splitTextToSize(options.text, options.maxWidth || pageWidthMinusRightMargin - textBoundsOnPage.x)[0];
             var baseLineRectOnPage = pathPositionRedo([JSON.parse(JSON.stringify(baselineRect))], this.posX + this.margin[3], -previousPageHeightSum + topMargin + this.ctx.prevPageLastElemOffset)[0];
             var needsClipping = doSlice && (i > min || i < max) && hasMargins.call(this);
@@ -13022,6 +13072,27 @@ function parseFontFamily(input) {
               align: textAlign,
               renderingMode: options.renderingMode
             });
+
+            // custom: adding links (linkMeta comes from custom html2canvas linkCallback)
+            if (this.linkMeta) {
+              var x1 = this.linkMeta.bounds.left;
+              var x2 = x1 + this.linkMeta.bounds.width;
+              var y1 = this.linkMeta.bounds.top;
+              var y2 = y1 + this.linkMeta.bounds.height;
+              if (options.origX >= x1 && options.origX <= x2 && options.origY >= y1 && options.origY <= y2) {
+                var _baseLineRectOnPage = baseLineRectOnPage,
+                  x = _baseLineRectOnPage.x,
+                  y = _baseLineRectOnPage.y,
+                  h = _baseLineRectOnPage.h,
+                  w = _baseLineRectOnPage.w;
+                this.pdf.link(x, y - h, w, h, {
+                  url: this.linkMeta.href
+                });
+                if (this.didAddLink) {
+                  this.didAddLink(i, x, y - h, w, h, this.linkMeta.href);
+                }
+              }
+            }
             if (needsClipping) {
               this.pdf.restoreGraphicsState();
             }
@@ -13797,6 +13868,16 @@ function parseFontFamily(input) {
           }
         }
       }
+
+      // custom: new callbacks
+      pdf.context2d.didDrawPage = this.opt.didDrawPage;
+      pdf.context2d.didAddLink = this.opt.didAddLink;
+      options.linkCallback = function (href, bounds) {
+        pdf.context2d.linkMeta = {
+          href: href,
+          bounds: bounds
+        };
+      };
       options.windowHeight = options.windowHeight || 0;
       options.windowHeight = options.windowHeight == 0 ? Math.max(this.prop.container.clientHeight, this.prop.container.scrollHeight, this.prop.container.offsetHeight) : options.windowHeight;
       pdf.context2d.save(true);
@@ -13809,6 +13890,9 @@ function parseFontFamily(input) {
       onRendered(canvas);
       this.prop.canvas = canvas;
       document.body.removeChild(this.prop.overlay);
+
+      // custom: calculate and return last y position
+      return this.opt.jsPDF.context2d.posY + this.prop.container.offsetHeight;
     });
   };
   Worker.prototype.toImg = function toImg() {
@@ -13833,9 +13917,10 @@ function parseFontFamily(input) {
     ];
 
     // Fulfill prereqs then create the image.
-    return this.thenList(prereqs).then(function toPdf_main() {
+    return this.thenList(prereqs).then(function toPdf_main(y) {
       // Create local copies of frequently used properties.
       this.prop.pdf = this.prop.pdf || this.opt.jsPDF;
+      return y;
     });
   };
 
@@ -13909,8 +13994,9 @@ function parseFontFamily(input) {
     }];
 
     // Fulfill prereqs, update the filename (if provided), and save the PDF.
-    return this.thenList(prereqs).then(function doCallback_main() {
+    return this.thenList(prereqs).then(function doCallback_main(y) {
       this.prop.callback(this.prop.pdf);
+      return y;
     });
   };
 
